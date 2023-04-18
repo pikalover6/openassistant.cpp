@@ -1,1 +1,1 @@
-# neox-ggml-lib
+# ggml-neox
