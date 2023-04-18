@@ -809,7 +809,7 @@ int main_gptneox(gpt_params params) {
                 printf("logits: ");
                 for (int i = 0; i < n_vocab; i++) {
                     // Upto 8 decimal places
-                    // printf("%.8f ", logits[i]);
+                    printf("%.8f ", logits[i]);
                 }
                 printf(" <END|>\n");
                 // Stdout should flush before returning
@@ -829,9 +829,6 @@ int main_gptneox(gpt_params params) {
                         top_p,
                         temp,
                         rng);
-
-                // print
-                // printf("%s", vocab.id_to_token[id].c_str());
 
                 last_n_tokens.erase(last_n_tokens.begin());
                 last_n_tokens.push_back(id);
@@ -876,7 +873,6 @@ int main_gptneox(gpt_params params) {
             break;
         }
     }
-    // printf(" <END|>\n");
 
     // report timing
     {
@@ -907,35 +903,17 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    // return if params.model or params.prompt are empty
-    //if (params.model.empty() || params.prompt.empty()) {
-    //    return 1;
-    //}
-
     if (params.seed < 0) {
         params.seed = time(NULL);
     }
 
     printf("%s: seed = %d\n", __func__, params.seed);
 
-    //if (params.prompt.empty()) {
-    //    return 1;
-    //}
-
-    // Get the model type from argv[1]
-    std::string model_type = argv[1];
-    printf("model_type: %s\n", model_type.c_str());
-
     if (params.return_logits) {
         printf("********************************\n");
         printf("*** return_logits mode ***\n");
         printf("*** setting sampling to greedy ***\n");
         printf("********************************\n");
-        // model_type should be either gptj or gptneox or bloom
-        // if (model_type != "gptj" && model_type != "gptneox" && model_type != "bloom") {
-        //     printf("model_type: %s, should be either gptj or gptneox or bloom\n", model_type.c_str());
-        //     assert(false);
-        // }
     }
 
     return main_gptneox(params);
