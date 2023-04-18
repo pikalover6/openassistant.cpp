@@ -907,14 +907,10 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    printf("babinga\n");
-
     // return if params.model or params.prompt are empty
     //if (params.model.empty() || params.prompt.empty()) {
     //    return 1;
     //}
-
-    printf("babonga\n");
 
     if (params.seed < 0) {
         params.seed = time(NULL);
@@ -942,7 +938,5 @@ int main(int argc, char ** argv) {
         // }
     }
 
-    printf("babunga\n");
-    //params.prompt = "Hello, my name is";
     return main_gptneox(params);
 }
