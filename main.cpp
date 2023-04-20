@@ -781,6 +781,8 @@ int main_gptneox(gpt_params params) {
         std::vector<gpt_vocab::id> last_n_tokens(last_n_size);
         std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
 
+        int display = 0;
+
         // printf("\n<|BEGIN> ");
         for (int i = embd.size(); i < embd_inp.size() + params.n_predict; i++) {
             // predict
@@ -865,14 +867,14 @@ int main_gptneox(gpt_params params) {
 
             bool negative_prompt = false;
 
-            int n = embd_inp.size();
-
-            int j = 0;
-
-            // display text
             for (auto id : embd) {
                 if (!params.return_logits) {
                     // printf(" %d ", id);
+                }
+                // Very hacky implentation
+                if (vocab.id_to_token[id] == "|>" && display < 3) {
+                    display ++;
+                    continue; // skip this token
                 }
                 // check if id is the negative prompt
                 if (vocab.id_to_token[id] == "<|endoftext|>") {
@@ -880,17 +882,8 @@ int main_gptneox(gpt_params params) {
                     negative_prompt = true;
                     break;
                 }
-                else {
-                    // Append length of vocab.id_to_token[id] to j
-                    j += vocab.id_to_token[id].length();
-                    // if j is larger than the length of embd_inp, then print the text
-                    if (j >= n) {
-                        printf("%s", vocab.id_to_token[id].c_str());
-                    }
-                    else {
-                        continue;
-                    }
-                    //printf("%s", vocab.id_to_token[id].c_str());
+                else if (display == 3) {
+                    printf("%s", vocab.id_to_token[id].c_str());
                 }
             }
             fflush(stdout);
