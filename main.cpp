@@ -10,6 +10,8 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <iostream>
+#include <algorithm>
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
@@ -752,131 +754,150 @@ int main_gptneox(gpt_params params) {
 
     std::vector<float> logits;
 
-    // tokenize the prompt
-    std::vector<gpt_vocab::id> embd_inp = ::gpt_tokenize(vocab, params.prompt); //TODO: set bos to true?
-
-    params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - (int) embd_inp.size());
-
-    printf("\n");
-    printf("%s: prompt: '%s'\n", __func__, params.prompt.c_str());
-    printf("%s: number of tokens in prompt = %zu\n", __func__, embd_inp.size());
-    for (int i = 0; i < (int) embd_inp.size(); i++) {
-        printf("%6d -> '%s'\n", embd_inp[i], vocab.id_to_token.at(embd_inp[i]).c_str());
-    }
-    printf("\n");
-    printf("sampling parameters: temp = %f, top_k = %d, top_p = %f, repeat_last_n = %i, repeat_penalty = %f\n", params.temp, params.top_k, params.top_p, params.repeat_last_n, params.repeat_penalty);
-    printf("\n\n");
+    size_t mem_per_token = 0;
 
     std::vector<gpt_vocab::id> embd;
 
-    // determine the required inference memory per token:
-    size_t mem_per_token = 0;
-    gptneox_eval(model, params.n_threads, 0, { 1, 2, 3, 4, 5 }, logits, mem_per_token);
+    while (true) {
+        std::string inp;
 
-    int last_n_size = params.repeat_last_n;
-    std::vector<gpt_vocab::id> last_n_tokens(last_n_size);
-    std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
+        printf("\n\nUser: ");
 
-    // printf("\n<|BEGIN> ");
-    for (int i = embd.size(); i < embd_inp.size() + params.n_predict; i++) {
-        // predict
-        if (embd.size() > 0) {
-            const int64_t t_start_us = ggml_time_us();
+        getline(std::cin, inp); 
 
-            if (!gptneox_eval(model, params.n_threads, n_past, embd, logits, mem_per_token)) { // update logits
-                printf("Failed to predict\n");
-                return 1;
-            }
+        printf("\nOpenAssistant: ");
 
-            t_predict_us += ggml_time_us() - t_start_us;
-        }
+        params.prompt = "<|prompter|>" + inp + "<|endoftext|><|assistant|>";
 
-        n_past += embd.size();
-        embd.clear();
+        // tokenize the prompt
+        std::vector<gpt_vocab::id> embd_inp = ::gpt_tokenize(vocab, params.prompt); //TODO: set bos to true?
 
-        if (i >= embd_inp.size()) {
-            // sample next token
-            const float top_k = params.top_k;
-            const float top_p = params.top_p;
-            const float temp  = params.temp;
-            const float repeat_penalty = params.repeat_penalty;
+        params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - (int) embd_inp.size());
 
-            const int n_vocab = model.hparams.n_vocab;
+        // determine the required inference memory per token:
+        gptneox_eval(model, params.n_threads, 0, { 1, 2, 3, 4, 5 }, logits, mem_per_token);
 
-            gpt_vocab::id id = 0;
+        int last_n_size = params.repeat_last_n;
+        std::vector<gpt_vocab::id> last_n_tokens(last_n_size);
+        std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
 
-            if (params.return_logits) {
-                printf("logits: ");
-                for (int i = 0; i < n_vocab; i++) {
-                    // Upto 8 decimal places
-                    // printf("%.8f ", logits[i]);
+        int display = 0;
+
+        // printf("\n<|BEGIN> ");
+        for (int i = embd.size(); i < embd_inp.size() + params.n_predict; i++) {
+            // predict
+            if (embd.size() > 0) {
+                const int64_t t_start_us = ggml_time_us();
+
+                if (!gptneox_eval(model, params.n_threads, n_past, embd, logits, mem_per_token)) { // update logits
+                    printf("Failed to predict\n");
+                    return 1;
                 }
-                printf(" <END|>\n");
-                // Stdout should flush before returning
-                fflush(stdout);
-                return 0;
+
+                t_predict_us += ggml_time_us() - t_start_us;
             }
 
-            {
-                const int64_t t_start_sample_us = ggml_time_us();
+            n_past += embd.size();
+            embd.clear();
 
-                id = sample_top_p_top_k_repeat_penalty(
-                        vocab,
-                        logits.data() + (logits.size() - n_vocab),
-                        last_n_tokens,
-                        repeat_penalty,
-                        top_k,
-                        top_p,
-                        temp,
-                        rng);
+            if (i >= embd_inp.size()) {
+                // sample next token
+                const float top_k = params.top_k;
+                const float top_p = params.top_p;
+                const float temp  = params.temp;
+                const float repeat_penalty = params.repeat_penalty;
 
-                // print
-                // printf("%s", vocab.id_to_token[id].c_str());
+                const int n_vocab = model.hparams.n_vocab;
 
-                last_n_tokens.erase(last_n_tokens.begin());
-                last_n_tokens.push_back(id);
+                gpt_vocab::id id = 0;
 
-                t_sample_us += ggml_time_us() - t_start_sample_us;
-            }
-
-            // add it to the context
-            embd.push_back(id);
-        } else {
-            // if here, it means we are still processing the input prompt
-            for (int k = i; k < embd_inp.size(); k++) {
                 if (params.return_logits) {
                     printf("logits: ");
-                    for (int i = 0; i < model.hparams.n_vocab; i++) {
+                    for (int i = 0; i < n_vocab; i++) {
                         // Upto 8 decimal places
                         printf("%.8f ", logits[i]);
                     }
-                    printf("\n");
+                    printf(" <END|>\n");
+                    // Stdout should flush before returning
+                    fflush(stdout);
+                    return 0;
                 }
-                embd.push_back(embd_inp[k]);
-                last_n_tokens.erase(last_n_tokens.begin());
-                last_n_tokens.push_back(embd_inp[k]);
-                if (embd.size() > params.n_batch) {
+
+                {
+                    const int64_t t_start_sample_us = ggml_time_us();
+
+                    id = sample_top_p_top_k_repeat_penalty(
+                            vocab,
+                            logits.data() + (logits.size() - n_vocab),
+                            last_n_tokens,
+                            repeat_penalty,
+                            top_k,
+                            top_p,
+                            temp,
+                            rng);
+
+                    last_n_tokens.erase(last_n_tokens.begin());
+                    last_n_tokens.push_back(id);
+
+                    t_sample_us += ggml_time_us() - t_start_sample_us;
+                }
+
+                // add it to the context
+                embd.push_back(id);
+            } else {
+                // if here, it means we are still processing the input prompt
+                for (int k = i; k < embd_inp.size(); k++) {
+                    if (params.return_logits) {
+                        printf("logits: ");
+                        for (int i = 0; i < model.hparams.n_vocab; i++) {
+                            // Upto 8 decimal places
+                            printf("%.8f ", logits[i]);
+                        }
+                        printf("\n");
+                    }
+                    embd.push_back(embd_inp[k]);
+                    last_n_tokens.erase(last_n_tokens.begin());
+                    last_n_tokens.push_back(embd_inp[k]);
+                    if (embd.size() > params.n_batch) {
+                        break;
+                    }
+                }
+                i += embd.size() - 1;
+            }
+
+            bool negative_prompt = false;
+
+            for (auto id : embd) {
+                if (!params.return_logits) {
+                    // printf(" %d ", id);
+                }
+                // Very hacky implentation
+                if (vocab.id_to_token[id] == "|>" && display < 3) {
+                    display ++;
+                    continue; // skip this token
+                }
+                // check if id is the negative prompt
+                if (vocab.id_to_token[id] == "<|endoftext|>") {
+                    // printf("END OF TEXT\n");
+                    negative_prompt = true;
                     break;
                 }
+                else if (display == 3) {
+                    printf("%s", vocab.id_to_token[id].c_str());
+                }
             }
-            i += embd.size() - 1;
-        }
+            fflush(stdout);
 
-        // display text
-        for (auto id : embd) {
-            if (!params.return_logits) {
-                // printf(" %d ", id);
+            if (negative_prompt) {
+                break;
             }
-            printf("%s", vocab.id_to_token[id].c_str());
-        }
-        fflush(stdout);
 
-        // end of text token
-        if (embd.back() == 2) {
-            break;
+            // end of text token
+            if (embd.back() == 2) {
+                break;
+            }
         }
     }
-    // printf(" <END|>\n");
 
     // report timing
     {
@@ -907,35 +928,17 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    // return if params.model or params.prompt are empty
-    //if (params.model.empty() || params.prompt.empty()) {
-    //    return 1;
-    //}
-
     if (params.seed < 0) {
         params.seed = time(NULL);
     }
 
     printf("%s: seed = %d\n", __func__, params.seed);
 
-    //if (params.prompt.empty()) {
-    //    return 1;
-    //}
-
-    // Get the model type from argv[1]
-    std::string model_type = argv[1];
-    printf("model_type: %s\n", model_type.c_str());
-
     if (params.return_logits) {
         printf("********************************\n");
         printf("*** return_logits mode ***\n");
         printf("*** setting sampling to greedy ***\n");
         printf("********************************\n");
-        // model_type should be either gptj or gptneox or bloom
-        // if (model_type != "gptj" && model_type != "gptneox" && model_type != "bloom") {
-        //     printf("model_type: %s, should be either gptj or gptneox or bloom\n", model_type.c_str());
-        //     assert(false);
-        // }
     }
 
     return main_gptneox(params);
