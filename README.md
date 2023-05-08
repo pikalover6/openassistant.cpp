@@ -1,3 +1,5 @@
+# USE KOBOLDCPP INSTEAD
+
 # openassistant.cpp
 
 Run a [pythia-based Open Assistant](https://huggingface.co/OpenAssistant/oasst-sft-1-pythia-12b) model locally on your cpu.
